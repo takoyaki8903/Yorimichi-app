@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>帰り道遊びナビ ✨Chubu Region Only</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <style>
+        #map { height: 100%; width: 100%; border-radius: 1rem; margin: 0.5rem; box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06); }
+        .leaflet-container { z-index: 1; font-family: inherit; }
+        .transition-screen { transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+        .hidden-auth { transform: translateY(-100%); opacity: 0; pointer-events: none; }
+    </style>
+</head>
+<body class="h-screen bg-slate-50 overflow-hidden font-sans text-gray-800">
+
+    <!-- 1. ログイン画面 -->
+    <div id="auth-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-white transition-screen border-b-8 border-blue-600">
+        <div class="max-w-md w-full p-10 text-center">
+            <div class="mb-8">
+                <div class="w-24 h-24 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl rotate-3">
+                    <i class="fas fa-location-crosshairs text-4xl"></i>
+                </div>
+                <h1 class="text-3xl font-black text-gray-900 tracking-tight">AI帰り道ナビ</h1>
+                <p class="text-gray-500 mt-4 text-sm leading-relaxed">中部地方に限定して、ルート沿いの寄り道スポットを検索します。</p>
+            </div>
+            <div class="space-y-6 flex flex-col items-center">
+                <div id="google_btn_container"></div>
+                <button id="demoLoginBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-all active:scale-95">デモモードで開始</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. メインアプリ -->
+    <div id="main-app" class="h-screen flex flex-col opacity-0 transition-opacity duration-700">
+        <header class="bg-white shadow-sm z-20 p-4 border-b border-gray-100">
+            <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-start gap-4">
+                <div class="flex items-center gap-3 shrink-0 mt-2">
+                    <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg"><i class="fas fa-map-marked-alt"></i></div>
+                    <h2 class="font-bold text-gray-900 whitespace-nowrap">AI Route Nav <span class="text-xs font-normal text-blue-500 bg-blue-50 px-2 py-0.5 rounded ml-2">中部限定</span></h2>
+                </div>
+                <div class="flex-grow flex flex-col gap-2 w-full">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <input id="start" type="text" placeholder="出発地（未入力で周辺検索）" class="bg-gray-50 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/20">
+                        <input id="end" type="text" placeholder="目的地（未入力で周辺検索）" class="bg-gray-50 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500/20">
+                        <div class="relative">
+                            <input id="ai-query" type="text" placeholder="何して遊ぶ？ 例: カフェ" class="w-full bg-blue-50/50 border-2 border-blue-100 rounded-xl p-3 pl-10 text-sm outline-none focus:border-blue-400 transition-all font-bold text-blue-800">
+                            <i class="fas fa-wand-magic-sparkles absolute left-3 top-3.5 text-blue-500"></i>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-2 px-1 items-center">
+                        <span class="text-[10px] text-gray-400 font-bold">1タップ検索:</span>
+                        <button class="quick-search-btn bg-white border border-gray-200 text-gray-600 text-[11px] font-bold py-1 px-3 rounded-full hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 transition-all shadow-sm" data-query="テーマパーク">🎢 テーマパーク</button>
+                        <button class="quick-search-btn bg-white border border-gray-200 text-gray-600 text-[11px] font-bold py-1 px-3 rounded-full hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 transition-all shadow-sm" data-query="カフェ">☕ カフェ</button>
+                        <button class="quick-search-btn bg-white border border-gray-200 text-gray-600 text-[11px] font-bold py-1 px-3 rounded-full hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 transition-all shadow-sm" data-query="ご飯">🍴 ご飯</button>
+                        <button class="quick-search-btn bg-white border border-gray-200 text-gray-600 text-[11px] font-bold py-1 px-3 rounded-full hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300 transition-all shadow-sm" data-query="ゲーセン">🎮 ゲーセン</button>
+                    </div>
+                </div>
+                <button id="searchBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition-all active:scale-95 whitespace-nowrap mt-1">検索</button>
+            </div>
+        </header>
+        
+        <main class="flex-grow flex flex-col md:flex-row overflow-hidden relative bg-slate-200">
+            <div id="map"></div>
+            <div id="side-panel" class="w-full md:w-96 bg-white flex flex-col shadow-2xl z-10">
+                <div id="ai-status" class="hidden p-4 bg-blue-600 text-white text-[10px] font-bold tracking-widest uppercase items-center justify-center gap-3">
+                    <i class="fas fa-brain animate-bounce"></i> <span id="status-text">中部地方の情報を検索中...</span>
+                </div>
+                <div id="ai-suggestion-container" class="hidden p-5 border-b border-gray-100 bg-blue-50/40">
+                    <div id="ai-suggestion-content" class="text-xs text-slate-700 font-medium leading-relaxed"></div>
+                </div>
+                <div id="spot-list" class="flex-grow overflow-y-auto px-4 py-4 space-y-4">
+                    <p class="text-center py-20 text-slate-400 text-xs">ルート検索や、マップ周辺のスポット検索ができます</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const apiKey = ""; 
+        let map, routeLayer, markers = [];
+        
+        const chubuLocation = { lat: 35.1814, lon: 136.9066 };
+        const chubuBounds = { minLat: 33.7, maxLat: 37.5, minLon: 135.5, maxLon: 139.5 };
+
+        const genreWords = ["カフェ", "コーヒー", "喫茶", "お茶", "ケーキ", "スイーツ", "カラオケ", "歌", "公園", "散歩", "自然", "ベンチ", "ゆっくり", "ご飯", "食事", "レストラン", "お腹", "ラーメン", "ファミレス", "食べる", "コンビニ", "飲み物", "ちょっと", "本", "勉強", "静か", "図書館", "服", "買い物", "ショッピング", "モール", "ゲーム", "ゲーセン", "遊ぶ", "プリクラ", "バーガー", "ハンバーガー", "牛丼", "寿司", "焼肉", "テーマパーク", "遊園地", "水族館", "動物園", "温泉", "銭湯", "サウナ", "風呂"];
+
+        // 🌟 追加: 略語と正式名称の変換辞書
+        const synonyms = {
+            "スタバ": "スターバックス",
+            "マック": "マクドナルド",
+            "マクド": "マクドナルド",
+            "ケンタ": "ケンタッキー",
+            "ミスド": "ミスタードーナツ",
+            "ドンキ": "ドン・キホーテ",
+            "サイゼ": "サイゼリヤ",
+            "ファミマ": "ファミリーマート",
+            "セブン": "セブン-イレブン",
+            "USJ": "ユニバーサル",
+            "ジャンカラ": "ジャンボカラオケ"
+        };
+
+        window.onload = function () {
+            if (typeof google !== 'undefined') {
+                google.accounts.id.initialize({
+                    client_id: "YOUR_GOOGLE_CLIENT_ID_HERE",
+                    callback: handleCredentialResponse,
+                    use_fedcm_for_prompt: false
+                });
+                google.accounts.id.renderButton(document.getElementById("google_btn_container"), { theme: "outline", size: "large", shape: "pill" });
+            }
+        };
+
+        function handleCredentialResponse(response) { loginSuccess(); }
+        function loginSuccess() {
+            document.getElementById('auth-screen').classList.add('hidden-auth');
+            document.getElementById('main-app').classList.remove('opacity-0');
+            initMap();
+            setupQuickButtons();
+        }
+        document.getElementById('demoLoginBtn').addEventListener('click', loginSuccess);
+
+        function initMap() {
+            map = L.map('map', {zoomControl: false}).setView([chubuLocation.lat, chubuLocation.lon], 11);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        async function geocode(query, referencePoint) {
+            let candidates = [];
+            try {
+                const resGSI = await fetch(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(query)}`);
+                const dataGSI = await resGSI.json();
+                if (dataGSI && dataGSI.length > 0) {
+                    candidates = dataGSI.map(item => ({ lat: item.geometry.coordinates[1], lon: item.geometry.coordinates[0], name: item.properties.title }));
+                }
+            } catch (e) { console.warn("GSI API Error", e); }
+
+            if (candidates.length === 0) {
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=jp&limit=10`);
+                const data = await res.json();
+                candidates = data.map(item => ({ lat: parseFloat(item.lat), lon: parseFloat(item.lon), name: item.display_name }));
+            }
+
+            let validCandidates = candidates.filter(pos => pos.lat >= chubuBounds.minLat && pos.lat <= chubuBounds.maxLat && pos.lon >= chubuBounds.minLon && pos.lon <= chubuBounds.maxLon);
+
+            if (validCandidates.length > 0) {
+                if (referencePoint) {
+                    validCandidates.sort((a, b) => getDistance(referencePoint.lat, referencePoint.lon, a.lat, a.lon) - getDistance(referencePoint.lat, referencePoint.lon, b.lat, b.lon));
+                }
+                return validCandidates[0];
+            }
+            throw new Error(`中部地方に「${query}」が見つかりませんでした。「愛知県〇〇市」のように詳しく入力してみてください。`);
+        }
+
+        function getSimpleAiQuery(userQuery) {
+            const rules = [
+                { words: ["テーマパーク", "遊園地", "レジャー", "アトラクション", "観覧車", "レゴランド", "USJ", "ディズニー", "パルパル"], tags: '["tourism"~"theme_park|attraction"]', keywords: "遊園地|テーマパーク|アトラクション|レゴランド", advice: "思いっきり遊べるテーマパークやレジャー施設を探します🎢" },
+                { words: ["動物園", "水族館", "牧場", "東山動植物園", "名古屋港水族館"], tags: '["tourism"~"zoo|aquarium"]', keywords: "動物園|水族館|牧場", advice: "生き物とふれあえるスポットを探します🐬" },
+                { words: ["温泉", "銭湯", "サウナ", "風呂", "スパ"], tags: '["amenity"="public_bath"]', keywords: "温泉|銭湯|サウナ|湯", advice: "疲れを癒やせる温泉や銭湯を探します♨️" },
+                { words: ["バーガー", "ハンバーガー", "マック", "マクドナルド", "モス", "バーガーキング", "ロッテリア", "ケンタッキー"], tags: '["amenity"="fast_food"]', keywords: "バーガー|マクドナルド|モス|バーガーキング|ロッテリア|ケンタッキー", advice: "サクッと食べられるファストフード店を探します🍔" },
+                { words: ["牛丼", "松屋", "すき家", "吉野家", "なか卯"], tags: '["amenity"="fast_food"]', keywords: "牛丼|松屋|すき家|吉野家|なか卯", advice: "パッと食べられる牛丼屋さんなどを探します🍚" },
+                { words: ["寿司", "スシロー", "くら寿司", "はま寿司", "かっぱ寿司", "魚べい"], tags: '["amenity"="restaurant"]', keywords: "寿司|スシロー|くら寿司|はま寿司|かっぱ寿司|魚べい", advice: "美味しいお寿司屋さんを探します🍣" },
+                { words: ["ガスト", "サイゼ", "ジョイフル", "ココス", "デニーズ", "びっくりドンキー", "ファミレス"], tags: '["amenity"="restaurant"]', keywords: "ガスト|サイゼ|ジョイフル|ココス|デニーズ|びっくりドンキー|レストラン", advice: "ゆっくりできるファミリーレストランを探します🍽️" },
+                { words: ["カフェ", "コーヒー", "喫茶", "お茶", "ケーキ", "スイーツ", "スタバ", "コメダ", "ドトール", "タリーズ"], tags: '["amenity"="cafe"]', keywords: "カフェ|珈琲|喫茶|スターバックス|コメダ|ドトール", advice: "ほっと一息つけるカフェや喫茶店を探しますね☕️" },
+                { words: ["カラオケ", "歌", "まねきねこ", "ジャンカラ", "ジョイサウンド"], tags: '["amenity"="karaoke"]', keywords: "カラオケ", advice: "思いっきり歌ってリフレッシュできる場所を探します🎤" },
+                { words: ["公園", "散歩", "自然", "ベンチ", "ゆっくり"], tags: '["leisure"="park"]', keywords: "公園|緑地", advice: "自然の中でリラックスできる公園を探してみます🌳" },
+                { words: ["コンビニ", "飲み物", "ちょっと"], tags: '["shop"="convenience"]', keywords: "コンビニ|セブン|ローソン|ファミマ", advice: "ちょっとしたお買い物に便利なコンビニを探します🏪" },
+                { words: ["本", "勉強", "静か", "図書館"], tags: '["amenity"="library"]', keywords: "図書館|図書", advice: "落ち着いて過ごせる静かな場所を探してみます📚" },
+                { words: ["ゲーム", "ゲーセン", "遊ぶ", "プリクラ"], tags: '["leisure"="amusement_arcade"]', keywords: "ゲーム|アミューズメント|セガ|ナムコ", advice: "楽しく遊べるゲームセンターなどを探します！🎮" }
+            ];
+            
+            // 🌟 修正: 略語が入力されたら、正式名称も検索対象に加える
+            let searchWords = [userQuery];
+            for (const [short, full] of Object.entries(synonyms)) {
+                if (userQuery.includes(short)) {
+                    searchWords.push(full);
+                }
+            }
+            
+            // 記号などを安全に処理しつつ、「|」でつなぐ（例：スタバ|スターバックス）
+            const safeQueryRegex = searchWords.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+            
+            for (const rule of rules) {
+                if (rule.words.some(word => userQuery.includes(word))) {
+                    return { keywords: `${safeQueryRegex}|${rule.keywords}`, tags: rule.tags, advice: rule.advice, expandedWords: searchWords };
+                }
+            }
+            
+            return { keywords: safeQueryRegex, tags: '', advice: `マップデータから「${userQuery}」を直接探しています🔍`, expandedWords: searchWords };
+        }
+
+        function getSpotGenre(tags) {
+            if (!tags) return { name: "スポット", icon: "fa-location-dot", color: "text-blue-600", bg: "bg-blue-50" };
+            
+            if (tags.tourism === 'theme_park' || tags.tourism === 'attraction') return { name: "テーマパーク", icon: "fa-ticket", color: "text-purple-600", bg: "bg-purple-50" };
+            if (tags.tourism === 'zoo' || tags.tourism === 'aquarium') return { name: "生き物・レジャー", icon: "fa-fish", color: "text-cyan-600", bg: "bg-cyan-50" };
+            if (tags.amenity === 'public_bath') return { name: "温泉・銭湯", icon: "fa-hot-tub-person", color: "text-red-500", bg: "bg-red-50" };
+            
+            if (tags.amenity === 'cafe') return { name: "カフェ", icon: "fa-coffee", color: "text-amber-600", bg: "bg-amber-50" };
+            if (tags.amenity === 'fast_food') return { name: "ファストフード", icon: "fa-burger", color: "text-orange-600", bg: "bg-orange-50" };
+            if (tags.amenity === 'restaurant') return { name: "レストラン", icon: "fa-utensils", color: "text-orange-600", bg: "bg-orange-50" };
+            if (tags.amenity === 'karaoke') return { name: "カラオケ", icon: "fa-microphone", color: "text-purple-600", bg: "bg-purple-50" };
+            if (tags.shop === 'convenience') return { name: "コンビニ", icon: "fa-store", color: "text-green-600", bg: "bg-green-50" };
+            if (tags.shop === 'supermarket') return { name: "スーパー", icon: "fa-cart-shopping", color: "text-emerald-600", bg: "bg-emerald-50" };
+            if (tags.leisure === 'park') return { name: "公園", icon: "fa-tree", color: "text-green-700", bg: "bg-green-100" };
+            if (tags.amenity === 'library') return { name: "図書館", icon: "fa-book", color: "text-blue-700", bg: "bg-blue-100" };
+            if (tags.leisure === 'amusement_arcade') return { name: "ゲーセン", icon: "fa-gamepad", color: "text-pink-600", bg: "bg-pink-50" };
+            if (tags.shop) return { name: "お店", icon: "fa-bag-shopping", color: "text-indigo-600", bg: "bg-indigo-50" };
+            
+            return { name: "スポット", icon: "fa-location-dot", color: "text-slate-600", bg: "bg-slate-100" };
+        }
+
+        async function getAiSearchQuery(userQuery) {
+            if(!apiKey) return getSimpleAiQuery(userQuery);
+            const prompt = `ユーザー要望: "${userQuery}"\nOSM(Overpass API)用の検索パラメータをJSONで返してください。`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            let delay = 1000;
+            for (let i = 0; i < 5; i++) {
+                try {
+                    const res = await fetch(url, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties: { keywords: { type: "STRING" }, tags: { type: "STRING" }, advice: { type: "STRING" } } } } })
+                    });
+                    if (!res.ok) throw new Error("API Limit");
+                    const data = await res.json();
+                    let parsed = JSON.parse(data.candidates[0].content.parts[0].text);
+                    
+                    // 🌟 追加: API成功時も略語リストを引き継ぐ
+                    let searchWords = [userQuery];
+                    for (const [short, full] of Object.entries(synonyms)) {
+                        if (userQuery.includes(short)) {
+                            searchWords.push(full);
+                        }
+                    }
+                    parsed.expandedWords = searchWords;
+                    return parsed;
+                    
+                } catch (e) {
+                    if (i === 4) return getSimpleAiQuery(userQuery);
+                    await new Promise(r => setTimeout(r, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        function setupQuickButtons() {
+            document.querySelectorAll('.quick-search-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.getElementById('ai-query').value = e.target.dataset.query;
+                    document.getElementById('searchBtn').click();
+                });
+            });
+        }
+
+        document.getElementById('searchBtn').addEventListener('click', async () => {
+            const startStr = document.getElementById('start').value;
+            const endStr = document.getElementById('end').value;
+            const uiQuery = document.getElementById('ai-query').value || "寄り道";
+            
+            const isRouteMode = startStr && endStr;
+            const isSinglePointMode = (startStr && !endStr) || (!startStr && endStr);
+            const singlePointQuery = startStr || endStr; 
+
+            const list = document.getElementById('spot-list');
+            const status = document.getElementById('ai-status');
+            const statusText = document.getElementById('status-text');
+            
+            list.innerHTML = '<div class="py-20 text-center"><i class="fas fa-spinner fa-spin text-blue-500 text-2xl"></i></div>';
+            status.classList.replace('hidden', 'flex');
+            document.getElementById('ai-suggestion-container').classList.add('hidden');
+
+            try {
+                statusText.innerText = "AIに最適な寄り道を相談中...";
+                const aiResult = await getAiSearchQuery(uiQuery);
+                
+                let overpassQuery = `[out:json][timeout:30];(`; 
+                const cleanKeywords = (aiResult.keywords || "").replace(/["\\]/g, '');
+
+                if (isRouteMode) {
+                    statusText.innerText = "地点の座標を特定中...";
+                    const start = await geocode(startStr, chubuLocation); 
+                    const end = await geocode(endStr, start);
+                    
+                    statusText.innerText = "ルートを計算中...";
+                    const routeRes = await fetch(`https://router.project-osrm.org/route/v1/foot/${start.lon},${start.lat};${end.lon},${end.lat}?overview=full&geometries=geojson`);
+                    const routeData = await routeRes.json();
+                    if (!routeData.routes || routeData.routes.length === 0) throw new Error("ルートが見つかりませんでした。");
+                    
+                    const routeGeoJSON = routeData.routes[0].geometry;
+                    
+                    if(routeLayer) map.removeLayer(routeLayer);
+                    routeLayer = L.geoJSON(routeGeoJSON, {style: {color: '#3b82f6', weight: 6, opacity: 0.8}}).addTo(map);
+                    map.fitBounds(routeLayer.getBounds(), {padding: [50, 50]});
+
+                    statusText.innerText = "ルート沿いのスポットを検索中...";
+                    
+                    const coords = routeGeoJSON.coordinates; 
+                    const searchPoints = [];
+                    const numSamples = 25; 
+                    const step = Math.max(1, Math.floor(coords.length / numSamples));
+                    
+                    for (let i = 0; i < coords.length; i += step) {
+                        searchPoints.push({ lat: coords[i][1], lon: coords[i][0] });
+                    }
+                    if (searchPoints[searchPoints.length - 1].lat !== coords[coords.length - 1][1]) {
+                        searchPoints.push({ lat: coords[coords.length - 1][1], lon: coords[coords.length - 1][0] });
+                    }
+
+                    const searchRadius = 1500; 
+                    for (const pt of searchPoints) {
+                        if (aiResult.tags && aiResult.tags !== '[""]' && aiResult.tags !== '') {
+                            overpassQuery += `nwr${aiResult.tags}(around:${searchRadius},${pt.lat},${pt.lon});`;
+                        }
+                        if (cleanKeywords && cleanKeywords !== "寄り道") {
+                            overpassQuery += `nwr["name"~"${cleanKeywords}"](around:${searchRadius},${pt.lat},${pt.lon});`;
+                        }
+                    }
+
+                } else if (isSinglePointMode) {
+                    statusText.innerText = `${singlePointQuery}を特定中...`;
+                    const pt = await geocode(singlePointQuery, chubuLocation);
+                    
+                    statusText.innerText = "周辺のスポットを検索中...";
+                    if(routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+                    map.setView([pt.lat, pt.lon], 14); 
+                    
+                    const searchRadius = 3000; 
+                    if (aiResult.tags && aiResult.tags !== '[""]' && aiResult.tags !== '') {
+                        overpassQuery += `nwr${aiResult.tags}(around:${searchRadius},${pt.lat},${pt.lon});`;
+                    }
+                    if (cleanKeywords && cleanKeywords !== "寄り道") {
+                        overpassQuery += `nwr["name"~"${cleanKeywords}"](around:${searchRadius},${pt.lat},${pt.lon});`;
+                    }
+                } else {
+                    statusText.innerText = "現在表示中のマップ周辺を検索中...";
+                    if(routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+
+                    const center = map.getCenter();
+                    const searchRadius = 3000; 
+                    if (aiResult.tags && aiResult.tags !== '[""]' && aiResult.tags !== '') {
+                        overpassQuery += `nwr${aiResult.tags}(around:${searchRadius},${center.lat},${center.lng});`;
+                    }
+                    if (cleanKeywords && cleanKeywords !== "寄り道") {
+                        overpassQuery += `nwr["name"~"${cleanKeywords}"](around:${searchRadius},${center.lat},${center.lng});`;
+                    }
+                }
+
+                overpassQuery += `);out body center;`;
+
+                const overRes = await fetch(`https://overpass-api.de/api/interpreter`, {
+                    method: 'POST', body: `data=${encodeURIComponent(overpassQuery)}`,
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+                });
+                
+                if (!overRes.ok) throw new Error("スポットが見つかりませんでした。別の言葉で試してみてください。");
+                const data = await overRes.json();
+
+                const uniqueSpotsMap = new Map();
+                if (data.elements) {
+                    data.elements.forEach(e => {
+                        if (e.tags && e.tags.name) {
+                            const lat = e.lat || (e.center && e.center.lat);
+                            const lon = e.lon || (e.center && e.center.lon);
+                            if (lat && lon) {
+                                e.lat = lat; e.lon = lon;
+                                const key = `${e.tags.name}_${lat.toFixed(3)}_${lon.toFixed(3)}`;
+                                uniqueSpotsMap.set(key, e);
+                            }
+                        }
+                    });
+                }
+                
+                let uniqueSpots = Array.from(uniqueSpotsMap.values());
+                
+                const superVips = [];
+                const vips = [];
+                const alternatives = [];
+
+                const isGenreSearch = genreWords.some(w => uiQuery.includes(w)) || uiQuery === "寄り道";
+                // 🌟 追加: 略語と正式名称の両方のリストを取得（例: ["スタバ", "スターバックス"]）
+                const searchWordsList = aiResult.expandedWords || [uiQuery];
+
+                uniqueSpots.forEach(e => {
+                    // 🌟 修正: 略語か正式名称のどちらかがお店の名前に含まれていれば「ズバリ見つかった」と判定する！
+                    const isSuperVip = uiQuery !== "寄り道" && e.tags.name && searchWordsList.some(w => e.tags.name.includes(w));
+                    
+                    if (isSuperVip) {
+                        superVips.push(e);
+                    } else if (isGenreSearch) {
+                        vips.push(e);
+                    } else {
+                        alternatives.push(e);
+                    }
+                });
+
+                const shuffle = (array) => {
+                    for (let i = array.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [array[i], array[j]] = [array[j], array[i]];
+                    }
+                };
+                shuffle(superVips);
+                shuffle(vips);
+                shuffle(alternatives);
+
+                const MAX_SPOTS = 20;
+                let limitedSpots = [];
+                let messageType = "normal";
+
+                limitedSpots = limitedSpots.concat(superVips);
+                if (limitedSpots.length < MAX_SPOTS) {
+                    limitedSpots = limitedSpots.concat(vips.slice(0, MAX_SPOTS - limitedSpots.length));
+                }
+                if (limitedSpots.length < MAX_SPOTS) {
+                    limitedSpots = limitedSpots.concat(alternatives.slice(0, MAX_SPOTS - limitedSpots.length));
+                }
+
+                limitedSpots = limitedSpots.slice(0, MAX_SPOTS);
+
+                if (superVips.length > 0) {
+                    messageType = "exact";
+                } else if (vips.length > 0 && isGenreSearch) {
+                    messageType = "genre";
+                } else if (limitedSpots.length > 0) {
+                    messageType = "alternative";
+                }
+
+                renderSpots(limitedSpots.map(e => ({ 
+                    name: e.tags.name, 
+                    location: { lat: e.lat, lng: e.lon },
+                    genre: getSpotGenre(e.tags)
+                })));
+                
+                document.getElementById('ai-suggestion-container').classList.remove('hidden');
+                const suggestionDiv = document.getElementById('ai-suggestion-content');
+                
+                if (isRouteMode) {
+                    if (messageType === "exact") {
+                        suggestionDiv.innerHTML = `<strong>🎯 見つかりました！</strong><br>ルート周辺の「${uiQuery}」を表示しています。`;
+                    } else if (messageType === "genre") {
+                        suggestionDiv.innerHTML = `<strong>AIからのアドバイス:</strong><br>${aiResult.advice}`;
+                    } else if (messageType === "alternative" && aiResult.tags !== '') {
+                        suggestionDiv.innerHTML = `<strong>💡 「${uiQuery}」は見つかりませんでしたが…</strong><br>代わりに、近くの飲食店や休憩できそうなスポットを表示しました！`;
+                    } else if (limitedSpots.length === 0) {
+                        suggestionDiv.innerHTML = `<strong>申し訳ありません。</strong><br>ルート周辺に「${uiQuery}」は見つかりませんでした。`;
+                    } else {
+                        suggestionDiv.innerHTML = `<strong>AIからのアドバイス:</strong><br>${aiResult.advice}`;
+                    }
+                } else {
+                    if (messageType === "exact") {
+                        suggestionDiv.innerHTML = `<strong>🎯 周辺エリア検索:</strong><br>マップの周辺から「${uiQuery}」を見つけました！<br><span class="text-[10px] text-gray-500">※ルート沿いを探す場合は出発地と目的地を入れてください。</span>`;
+                    } else if (messageType === "alternative" && aiResult.tags !== '') {
+                        suggestionDiv.innerHTML = `<strong>💡 周辺エリア検索:</strong><br>「${uiQuery}」は見つかりませんでしたが、代わりに近そうな飲食店などを表示しました！<br><span class="text-[10px] text-gray-500">※ルート沿いを探す場合は出発地と目的地を入れてください。</span>`;
+                    } else if (limitedSpots.length === 0) {
+                        suggestionDiv.innerHTML = `<strong>周辺エリア検索:</strong><br>マップの周辺に「${uiQuery}」は見つかりませんでした。<br><span class="text-[10px] text-gray-500">※ルート沿いを探す場合は出発地と目的地を入れてください。</span>`;
+                    } else {
+                        suggestionDiv.innerHTML = `<strong>周辺エリア検索:</strong><br>マップの周辺から条件に合う場所を探しました！<br><span class="text-[10px] text-gray-500">※ルート沿いを探す場合は出発地と目的地を入れてください。</span>`;
+                    }
+                    if (markers.length > 0) {
+                        const group = new L.featureGroup(markers);
+                        map.fitBounds(group.getBounds(), {padding: [50, 50]});
+                    }
+                }
+                
+            } catch (e) {
+                list.innerHTML = `<div class="p-6 text-red-500 text-xs font-bold bg-red-50 rounded-xl"><i class="fas fa-exclamation-triangle mr-2"></i>${e.message}</div>`;
+            } finally {
+                status.classList.replace('flex', 'hidden');
+            }
+        });
+
+        function renderSpots(spots) {
+            const list = document.getElementById('spot-list');
+            list.innerHTML = "";
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+            
+            if (spots.length === 0) {
+                list.innerHTML = '<p class="text-center py-20 text-slate-400 text-xs">指定の条件に合うスポットが見つかりませんでした。<br>別の言葉で検索するか、地図を移動してお試しください。</p>';
+                return;
+            }
+
+            spots.forEach(spot => {
+                const marker = L.marker([spot.location.lat, spot.location.lng]).addTo(map).bindPopup(spot.name);
+                markers.push(marker);
+                
+                const div = document.createElement('div');
+                div.className = "p-4 bg-white rounded-xl border border-slate-100 shadow-sm cursor-pointer hover:bg-blue-50 transition-all border-l-4 border-l-blue-500";
+                
+                div.innerHTML = `
+                    <h3 class="font-bold text-sm text-slate-800">${spot.name}</h3>
+                    <div class="flex items-center gap-2 mt-2">
+                        <span class="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-md ${spot.genre.bg} ${spot.genre.color}">
+                            <i class="fas ${spot.genre.icon} mr-1"></i>${spot.genre.name}
+                        </span>
+                        <span class="text-[10px] text-gray-400"><i class="fas fa-location-dot mr-1"></i>ルート周辺</span>
+                    </div>
+                `;
+                
+                div.onclick = () => { map.setView([spot.location.lat, spot.location.lng], 16); marker.openPopup(); };
+                list.appendChild(div);
+            });
+        }
+    </script>
+</body>
+</html>
